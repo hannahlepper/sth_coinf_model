@@ -2,7 +2,6 @@
 
 using Distributions #Package contaning negative binomial distribution
 
-
 ###### Making NegativeBinomial faster ######
 #Courtesy of my partner Mike who does programming all the time
 
@@ -259,5 +258,3 @@ using Plots
 
 plot(1:10000, EC)
 plot(1:10000, prevs)
-
-N_a.b = 1
