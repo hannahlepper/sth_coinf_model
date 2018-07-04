@@ -2,19 +2,6 @@
 
 using Distributions #Package contaning negative binomial distribution
 
-###### Making NegativeBinomial faster ######
-#Courtesy of my partner Mike who does programming all the time
-
-#struct NegativeBinomial{T}
-#  p0::T
-#  cdf::Vector{T}
-#end
-
-#function NegativeBinomial{T}(r::Real,p::Real) where T
-#  ps = cdf.(Distributions.NegativeBinomial(r,p), 0:40)
-#  NegativeBinomial{T}(ps[1], ps)
-#end
-
 ###### global parameters ######
 
 #It is faster to define them as constants but we can't overwrite them
