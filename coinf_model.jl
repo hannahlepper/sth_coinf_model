@@ -1,10 +1,9 @@
-###### STH co-infection model ######
+# #STH co-infection model
 
 using Distributions #Package contaning negative binomial distribution
 
-###### global parameters ######
+# ### Global parameters
 
-#It is faster to define them as constants but we can't overwrite them
 const ts = 1/73 #time step in years; 5 days
 const halflife = 8.1 #halflife of immunity in hosts in days
 const av_age = 18.2 #Average age in years in population - used very roughly
@@ -12,16 +11,12 @@ const pc_dr = 8/1000 * ts #per capita death rate
 const stool_samp = 0.054 #Stool sample used in measuring egg deposition
 
 
-###### Worm species specific parameters ######
+# ### Worm species specific parameters
 
-#names
-sp = [:Na, :Al, :Tt]
-
-#I am defining a data structure with the elements b to init_pars, which will all be of the same type (class)
-#We will be able to assign a set of values to this structure (see below), and will be able to access
-#elements in the structure using '.', e.g N_a.b
-#T means type, e.g. Int, Float64.
-#The struct is mutable so that parameters can vary if necessary
+# Defining a data structure with parameter values that are specific to worm species, which will all be of the same type (class)
+# Can access elements in the structure using '.', e.g `N_a.b`
+# T means type, e.g. Int, Float64.
+# The struct is mutable so that parameters can vary if necessary
 
 mutable struct Par{T}
   b                    ::T   # 1.rate of exposure per day - has to be v v low
@@ -44,7 +39,7 @@ mutable struct Par{T}
   init_mean            ::T   # 18.mean of initial distribution of worms in pop.
 end
 
-#Inputting parameters for each species
+# Inputting parameters for each species
 N_a = Par{Float64}(
     1.9e-10 * 365 * ts,
     0.001, 0.001, #1,2,3
@@ -70,12 +65,12 @@ T_t = Par{Float64}(
     0.00192 * 365 * ts, 0.0286 * 365 * ts, 0.05 * 365 * ts, #10,11,12
     0.001, 0.35, 0.0148, 0, 0, 0.5) #13,14,15,16,17,18
 
-#We keep these three Pars structs in an array, accessing as SpPars[1] etc
+# Can keep these three Pars structs in an array, accessing as SpPars[1] etc
 SpPars = [N_a, A_l, T_t]
 
-##### Host attributes data structures #####
+# ### Host infections data structures
 
-#Each host has infections attributes per species in a data structure:
+# Each host has infections attributes per species in a data structure:
 
 struct Infection{T}
     Imme    ::T #Anti-establishment immunity strength
@@ -86,10 +81,10 @@ struct Infection{T}
     EOut    ::T #Egg output
 end
 
-#We define a method so that we can easily make an empty structure.
+# Define a method so that we can easily make an empty structure.
 Infection{T}() where T = Infection{T}(0,0,0,0,0,0)
 
-##### Pool attributes data structre #####
+# ### Pool attributes data structre
 
 struct Soil{T}
     PIS ::T #Pre-infective stages
@@ -98,14 +93,18 @@ end
 
 Soil{T}() where T = Soil{T}(0,0)
 
-##### model functions ######
+# ### Model functions ######
 
-#arguements are: individual, worm burden, infective stages in pool, halflife, parameters
+# #### Update infections
+# Arguments are: individual, worm burden, infective stages in pool, halflife, parameters.
+# We assume everything is happening sequentially rather than simultaneously - therefore:
+# - Imme and Immf calculation uses WB from the previous time step and are only calculated once
+# - New eggs uses this time step's adult worms even though Imme and Immf are using *last* timestep's WB.
+
 function update_Infection(i, WB, IS, halflife, p)
     #New infections
     mean = p.b * IS
     if mean > 0
-        #exposure = float(rand(NegativeBinomial{Float64}(mean + float(1e-6), p.k)))
         exposure = float(rand(NegativeBinomial(mean, p.k)))
     else
         exposure = 0.0
@@ -113,8 +112,7 @@ function update_Infection(i, WB, IS, halflife, p)
     newPEL = ((1-p.mu_le) * i.PEL) + exposure
     PEL = newPEL * (1-p.M_le)
 
-    #Anti establishment immunity. We assume this is happening sequentially, using WB from the
-    #previous time step - we are not taking the AW into account yet as we have not yet calculated them
+    #Anti establishment immunity
     activation = PEL * p.Imme_activation
     modulation = exp(-(p.est_modulation * WB))
     Imme = ((0.5^(1/halflife) * i.Imme) + activation) * modulation
@@ -131,19 +129,20 @@ function update_Infection(i, WB, IS, halflife, p)
     #New adults
     AW = ((1-p.mu_adults) * i.AW) + (p.M_le * newEL)
 
-    #New eggs - we are using the current time step's AW but the previous timestep's
-    #WB in Imme and Immf as we assume they were altered only once per timestep
+    #New eggs
     modulation = exp(-(Immf + (p.dens_effect * AW/2)))
     EOut = AW/2 * p.WfN * modulation
 
     Infection{Float64}(Imme, Immf, PEL, EL, AW, EOut)
 end
 
+# #### Calculate worm burdens (WB)
 function update_WBs(pop, pars, n_hosts)
   [sum([x.AW for x in pop[i,:]] .* [p.weightings for p in pars]) for i in 1:n_hosts]
 end
 
-#Arguments: soil, population of infections, parameters
+# #### Deposit eggs in soil
+# Arguments: soil, population of infections, parameters
 function update_pool(S, pop, p)
     Eggs = sum([x.EOut for x in pop])
     PIS = ((1 - (p.pool_egg_loss + p.pool_egg_maturation)) * S.PIS) + Eggs
@@ -151,8 +150,11 @@ function update_pool(S, pop, p)
     Soil{Float64}(PIS, IS)
 end
 
-#Birth and death process - select all individuals over 80 years old and randomly select from the rest
-#of the population - reset ages and infections so population size remains constant
+# #### Birth and death process
+
+# Select all individuals over 80 years old and randomly  select from the rest of
+# the population - reset ages and infections so population size remains constant
+
 function reset_inds_sys(population, ages, pc_dr)
   for i = 1:length(ages)
     if ages[i] > 80 || rand(Binomial(1, pc_dr)) == 1
@@ -168,7 +170,8 @@ function update_ages(ages, ts)
 end
 
 
-#Set up initial arrays etc. Can return multiple objects.
+# ### Set up and model run functions
+
 function SystemSetUp(n_hosts, pars, av_age)
     #Initialise ages, roughly scattered around average age, avoiding negative ages using abs
     ages = [abs(rand(Normal(av_age, av_age))) for i in 1:n_hosts]
@@ -211,6 +214,9 @@ function run_mod(n_hosts, pars, ts, halflife, pop_infections, Pool, ages, WBs, p
     return ages, pop_infections, Pool, WBs
 end
 
+# Note on order in run_mod function: WB happens outside of the species and host
+# loop because it needs information from all species in the whole population
+
 function main(n_runs, n_hosts, pars, av_age, ts, halflife, pc_dr, stool_samp)
 
   #Set arrays up
@@ -219,27 +225,30 @@ function main(n_runs, n_hosts, pars, av_age, ts, halflife, pc_dr, stool_samp)
   #For storing summary statistics
   EC = zeros(Float64, n_runs, 3)
   prevs = zeros(Float64, n_runs, 3)
-  rec = 0#n_runs - 6
 
   #Loop through the runs
   for r in 1:n_runs
     ages, pop_infections, Pool, WBs = run_mod(n_hosts, pars, ts, halflife, pop_infections, Pool, ages, WBs, pc_dr)
-    if r > rec
+
+      #get data needed for fitting
       for sp in 1:3
         #Take mean egg output from only infected individuals
         eggs = filter(!iszero, [x.EOut for x in pop_infections[:,sp]])
-        EC[r - rec,sp] = mean(eggs)/(365 * ts) * stool_samp
-        prevs[r - rec,sp] = count(i -> i > 0.0, x.AW for x in pop_infections[:,sp])/n_hosts
+        EC[n_runs,sp] = mean(eggs)/(365 * ts) * stool_samp
+        prevs[n_runs,sp] = count(i -> i > 0.0, x.AW for x in pop_infections[:,sp])/n_hosts
       end
-    end
   end
-#  EC = [log(mean(EC[:,sp])) for sp in 1:3]
-#  prevs = [mean(prevs[:,sp]) for sp in 1:3]
-  return EC, prevs, pop_infections
+
+  return EC, prevs
 end
 
-#Currently taking about 10 secs, give or take
-@time EC, prevs, pop = main(10000, 1000, SpPars, 18.2, ts, halflife, pc_dr, stool_samp)
+# ## Example run
+
+#Takes 10 - 15 seconds
+@time EC, prevs = main(10000, 1000, SpPars, 18.2, ts, halflife, pc_dr, stool_samp)
+
+# ### Plot output
+# Plots the egg counts and prevalence of each species. y1 = N. americanus, y2 = Ascaris, y3 = Trichuris.
 
 using Plots
 
