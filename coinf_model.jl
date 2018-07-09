@@ -1,4 +1,4 @@
-# #STH co-infection model
+# # STH co-infection model
 
 using Distributions #Package contaning negative binomial distribution
 
@@ -41,21 +41,21 @@ end
 
 # Inputting parameters for each species
 N_a = Par{Float64}(
-    1.9e-10 * 365 * ts,
+    1.05e-10,
     0.001, 0.001, #1,2,3
     20000 * 365 * ts, 0.067 * 365 * ts, 0.00182 * 365 * ts, #4,5,6
     0.00182 * 365 * ts, 0.07 * 365 * ts, 0.0467 * 365 * ts, #7,8,9
     0.011 * 365 * ts, 0.11 * 365 * ts, 0.15 * 365 * ts, #10,11,12
-    0.019, 0.23, 0.037, 0, 0, 2) #13,14,15,16,17,18
+    0.019, 0.27, 0.037, 0, 0, 16.34) #13,14,15,16,17,18
 
 
 A_l = Par{Float64}(
-    1.65e-11 * 365 * ts,
+    8.05e-12,
     0.001, 0.001, #1,2,3
     200000 * 365 * ts, 0.067 * 365 * ts, 0.00183 * 365 * ts, #4,5,6
     0.00183 * 365 * ts, 0.10 * 365 * ts, 0.0714 * 365 * ts, #7,8,9
     0.0085 * 365 * ts, 0.0286 * 365 * ts, 0.03 * 365 * ts, #10,11,12
-    0.00425, 0.57, 1, 0, 0, 0.5) #13,14,15,16,17,18
+    0.00425, 0.34, 1, 0, 0, 434) #13,14,15,16,17,18
 
 T_t = Par{Float64}(
     3.8e-12 * 365 * ts,
@@ -63,7 +63,7 @@ T_t = Par{Float64}(
     20000 * 365 * ts, 1, 0.00182 * 365 * ts, #4,5,6
     0.00182 * 365 * ts, 0.4 * 365 * ts, 0.0133 * 365 * ts, #7,8,9
     0.00192 * 365 * ts, 0.0286 * 365 * ts, 0.05 * 365 * ts, #10,11,12
-    0.001, 0.35, 0.0148, 0, 0, 0.5) #13,14,15,16,17,18
+    0.001, 0.21, 0.0148, 0, 0, 38.79) #13,14,15,16,17,18
 
 # Can keep these three Pars structs in an array, accessing as SpPars[1] etc
 SpPars = [N_a, A_l, T_t]
@@ -114,7 +114,11 @@ function update_Infection(i, WB, IS, halflife, p)
 
     #Anti establishment immunity
     activation = PEL * p.Imme_activation
-    modulation = exp(-(p.est_modulation * WB))
+    if p.est_modulation > 0
+      modulation = exp(-(p.est_modulation * WB))
+    else
+      modulation = 1
+    end
     Imme = ((0.5^(1/halflife) * i.Imme) + activation) * modulation
 
     #New established larvae
@@ -123,7 +127,11 @@ function update_Infection(i, WB, IS, halflife, p)
 
     #Anti fecundity immunity
     activation = EL * p.Immf_activation
-    modulation = exp(-(p.fec_modulation * WB))
+    if p.fec_modulation > 0
+      modulation = exp(-(p.fec_modulation * WB))
+    else
+      modulation = 1
+    end
     Immf = ((0.5^(1/halflife) * i.Immf) + activation) * modulation
 
     #New adults
@@ -177,7 +185,7 @@ function SystemSetUp(n_hosts, pars, av_age)
     ages = [abs(rand(Normal(av_age, av_age))) for i in 1:n_hosts]
 
     #Initialise pool with eggs and infective stages
-    Pool = [Soil{Float64}(100, 1000000) for sp in 1:3]
+    Pool = [Soil{Float64}(100, 10000) for sp in 1:3]
 
     #Initialise worms with n. binom draw for adults
     init_worms(r, p) = Infection{Float64}(0, 0, 0, 0, float(rand(NegativeBinomial(r,p))), 0)
@@ -223,34 +231,40 @@ function main(n_runs, n_hosts, pars, av_age, ts, halflife, pc_dr, stool_samp)
   ages, Pool, pop_infections, WBs = SystemSetUp(n_hosts, pars, av_age)
 
   #For storing summary statistics
-  EC = zeros(Float64, n_runs, 3)
-  prevs = zeros(Float64, n_runs, 3)
+  eggs = zeros(Float64, n_hosts, 3)
+  #EC = zeros(Float64, n_runs, 3)
+  #prevs = zeros(Float64, n_runs, 3)
 
   #Loop through the runs
   for r in 1:n_runs
     ages, pop_infections, Pool, WBs = run_mod(n_hosts, pars, ts, halflife, pop_infections, Pool, ages, WBs, pc_dr)
 
-      #get data needed for fitting
-      for sp in 1:3
+      #get mean egg counts and prev for whole run
+      #for sp in 1:3
         #Take mean egg output from only infected individuals
-        eggs = filter(!iszero, [x.EOut for x in pop_infections[:,sp]])
-        EC[n_runs,sp] = mean(eggs)/(365 * ts) * stool_samp
-        prevs[n_runs,sp] = count(i -> i > 0.0, x.AW for x in pop_infections[:,sp])/n_hosts
-      end
+        #eggs = filter(!iszero, [x.EOut for x in pop_infections[:,sp]])
+        #EC[r,sp] = mean(eggs)/(365 * ts) * stool_samp
+        #prevs[r,sp] = count(i -> i > 0.0, x.AW for x in pop_infections[:,sp])/n_hosts
+      #end
   end
 
-  return EC, prevs
+  #Get final distribution of eggs
+  for sp in 1:3
+    eggs[:,sp] = [(x.EOut/(365*ts)) for x in pop_infections[:,sp]]
+  end
+
+  return eggs
 end
 
 # ## Example run
 
-#Takes 10 - 15 seconds
-@time EC, prevs = main(10000, 1000, SpPars, 18.2, ts, halflife, pc_dr, stool_samp)
+#Usually takes 10 - 15 seconds
+@time eggs = main(2000, 5000, SpPars, 18.2, ts, halflife, pc_dr, stool_samp)
 
 # ### Plot output
 # Plots the egg counts and prevalence of each species. y1 = N. americanus, y2 = Ascaris, y3 = Trichuris.
 
 using Plots
 
-plot(1:10000, EC)
-plot(1:10000, prevs)
+plot(1:2000, EC)
+plot(1:5000, prevs)
