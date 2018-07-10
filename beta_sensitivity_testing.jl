@@ -92,6 +92,8 @@ open(file -> serialize(file, sensitivity_data_T_t), "T_t.jls", "w")
 writecsv("N_a.csv", sensitivity_data_N_a)
 writecsv("A_l.csv", sensitivity_data_A_l)
 writecsv("T_t.csv", sensitivity_data_T_t)
+writecsv("NaPars.csv", Na_par)
+writecsv("AlPars.csv", Al_par)
 
 #Shashi's Text Pass might be faster for this
 # Tune betas to figure out realistic ranges for them

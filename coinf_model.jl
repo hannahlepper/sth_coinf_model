@@ -41,7 +41,7 @@ end
 
 # Inputting parameters for each species
 N_a = Par{Float64}(
-    1.05e-10,
+    5e-12,
     0.001, 0.001, #1,2,3
     20000 * 365 * ts, 0.067 * 365 * ts, 0.00182 * 365 * ts, #4,5,6
     0.00182 * 365 * ts, 0.07 * 365 * ts, 0.0467 * 365 * ts, #7,8,9
@@ -50,7 +50,7 @@ N_a = Par{Float64}(
 
 
 A_l = Par{Float64}(
-    8.05e-12,
+    1e-13,
     0.001, 0.001, #1,2,3
     200000 * 365 * ts, 0.067 * 365 * ts, 0.00183 * 365 * ts, #4,5,6
     0.00183 * 365 * ts, 0.10 * 365 * ts, 0.0714 * 365 * ts, #7,8,9
@@ -58,7 +58,7 @@ A_l = Par{Float64}(
     0.00425, 0.34, 1, 0, 0, 434) #13,14,15,16,17,18
 
 T_t = Par{Float64}(
-    3.8e-12 * 365 * ts,
+    1e-14,
     0.001, 0.001, #1,2,3
     20000 * 365 * ts, 1, 0.00182 * 365 * ts, #4,5,6
     0.00182 * 365 * ts, 0.4 * 365 * ts, 0.0133 * 365 * ts, #7,8,9
@@ -231,40 +231,40 @@ function main(n_runs, n_hosts, pars, av_age, ts, halflife, pc_dr, stool_samp)
   ages, Pool, pop_infections, WBs = SystemSetUp(n_hosts, pars, av_age)
 
   #For storing summary statistics
-  eggs = zeros(Float64, n_hosts, 3)
-  #EC = zeros(Float64, n_runs, 3)
-  #prevs = zeros(Float64, n_runs, 3)
+  #eggs = zeros(Float64, n_hosts, 3)
+  EC = zeros(Float64, n_runs, 3)
+  prevs = zeros(Float64, n_runs, 3)
 
   #Loop through the runs
   for r in 1:n_runs
     ages, pop_infections, Pool, WBs = run_mod(n_hosts, pars, ts, halflife, pop_infections, Pool, ages, WBs, pc_dr)
 
       #get mean egg counts and prev for whole run
-      #for sp in 1:3
-        #Take mean egg output from only infected individuals
-        #eggs = filter(!iszero, [x.EOut for x in pop_infections[:,sp]])
-        #EC[r,sp] = mean(eggs)/(365 * ts) * stool_samp
-        #prevs[r,sp] = count(i -> i > 0.0, x.AW for x in pop_infections[:,sp])/n_hosts
-      #end
+      for sp in 1:3
+        #Take mean egg output from only infected individuals?
+        eggs = [x.EOut for x in pop_infections[:,sp]]
+        EC[r,sp] = mean(eggs)/(365 * ts) * stool_samp
+        prevs[r,sp] = count(i -> i > 0.0, x.AW for x in pop_infections[:,sp])/n_hosts
+      end
   end
 
   #Get final distribution of eggs
-  for sp in 1:3
-    eggs[:,sp] = [(x.EOut/(365*ts)) for x in pop_infections[:,sp]]
-  end
+  #for sp in 1:3
+    #eggs[:,sp] = [(x.EOut/(365*ts)) for x in pop_infections[:,sp]]
+  #end
 
-  return eggs
+  return EC, prevs
 end
 
 # ## Example run
 
 #Usually takes 10 - 15 seconds
-@time eggs = main(2000, 5000, SpPars, 18.2, ts, halflife, pc_dr, stool_samp)
+@time EC, prevs = main(5000, 5000, SpPars, 18.2, ts, halflife, pc_dr, stool_samp)
 
 # ### Plot output
 # Plots the egg counts and prevalence of each species. y1 = N. americanus, y2 = Ascaris, y3 = Trichuris.
 
 using Plots
 
-plot(1:2000, EC)
+plot(1:5000, EC)
 plot(1:5000, prevs)
