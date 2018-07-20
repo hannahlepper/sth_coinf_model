@@ -6,7 +6,7 @@ using Distributions #Package contaning negative binomial distribution
 
 const ts = 1/73 #time step in years; 5 days
 const halflife = 8.1 #halflife of immunity in hosts in days
-const av_age = 18.2 #Average age in years in population - used very roughly
+const av_age = 18.2 #Initial average age in years in population - used very roughly
 const pc_dr = 8/1000 * ts #per capita death rate
 const stool_samp = 0.054 #Stool sample used in measuring egg deposition
 
@@ -41,8 +41,8 @@ end
 
 # Inputting parameters for each species
 N_a = Par{Float64}(
-    5e-12,
-    0.001, 0.001, #1,2,3
+    5e-11,
+    0.00, 0.00, #1,2,3
     20000 * 365 * ts, 0.067 * 365 * ts, 0.00182 * 365 * ts, #4,5,6
     0.00182 * 365 * ts, 0.07 * 365 * ts, 0.0467 * 365 * ts, #7,8,9
     0.011 * 365 * ts, 0.11 * 365 * ts, 0.15 * 365 * ts, #10,11,12
@@ -50,20 +50,20 @@ N_a = Par{Float64}(
 
 
 A_l = Par{Float64}(
-    1e-13,
-    0.001, 0.001, #1,2,3
+    01e-13,
+    0.00, 0.00, #1,2,3
     200000 * 365 * ts, 0.067 * 365 * ts, 0.00183 * 365 * ts, #4,5,6
     0.00183 * 365 * ts, 0.10 * 365 * ts, 0.0714 * 365 * ts, #7,8,9
     0.0085 * 365 * ts, 0.0286 * 365 * ts, 0.03 * 365 * ts, #10,11,12
-    0.00425, 0.34, 1, 0, 0, 434) #13,14,15,16,17,18
+    0.00425, 0.34, 1, 0, 0, 0) #434) #13,14,15,16,17,18
 
 T_t = Par{Float64}(
-    1e-14,
-    0.001, 0.001, #1,2,3
+    01e-14,
+    0.00, 0.00, #1,2,3
     20000 * 365 * ts, 1, 0.00182 * 365 * ts, #4,5,6
-    0.00182 * 365 * ts, 0.4 * 365 * ts, 0.0133 * 365 * ts, #7,8,9
+    0.00182 * 365 * ts, min(0.4 * 365 * ts, 1), 0.0133 * 365 * ts, #7,8,9
     0.00192 * 365 * ts, 0.0286 * 365 * ts, 0.05 * 365 * ts, #10,11,12
-    0.001, 0.21, 0.0148, 0, 0, 38.79) #13,14,15,16,17,18
+    0.001, 0.21, 0.0148, 0, 0, 0)# 38.79) #13,14,15,16,17,18
 
 # Can keep these three Pars structs in an array, accessing as SpPars[1] etc
 SpPars = [N_a, A_l, T_t]
@@ -103,17 +103,21 @@ Soil{T}() where T = Soil{T}(0,0)
 
 function update_Infection(i, WB, IS, halflife, p)
     #New infections
-    mean = p.b * IS
+    mean = 10#p.b * IS
     if mean > 0
-        exposure = float(rand(NegativeBinomial(mean, p.k)))
+        exposure = mean#float(rand(Poisson(mean)))
+        #exposure = float(rand(NegativeBinomial(1, (mean/(mean+p.k)))))
     else
         exposure = 0.0
     end
+
+    #New pre-establishment larvae
     newPEL = ((1-p.mu_le) * i.PEL) + exposure
     PEL = newPEL * (1-p.M_le)
+    @assert PEL >= 0 "PEL < 0"
 
     #Anti establishment immunity
-    activation = PEL * p.Imme_activation
+    activation = newPEL * p.Imme_activation
     if p.est_modulation > 0
       modulation = exp(-(p.est_modulation * WB))
     else
@@ -126,7 +130,7 @@ function update_Infection(i, WB, IS, halflife, p)
     EL = newEL * (1-p.M_ll)
 
     #Anti fecundity immunity
-    activation = EL * p.Immf_activation
+    activation = newEL * p.Immf_activation
     if p.fec_modulation > 0
       modulation = exp(-(p.fec_modulation * WB))
     else
@@ -177,19 +181,27 @@ function update_ages(ages, ts)
     [a += ts for a in ages]
 end
 
-
 # ### Set up and model run functions
+
+function initworms(init_mean, k)
+  if init_mean == 0
+    Infection{Float64}()
+  else
+    Infection{Float64}(0, 0, 0, 0, float(rand(NegativeBinomial(k, (1-k)/(init_mean + k)))), 0)
+  end
+end
 
 function SystemSetUp(n_hosts, pars, av_age)
     #Initialise ages, roughly scattered around average age, avoiding negative ages using abs
     ages = [abs(rand(Normal(av_age, av_age))) for i in 1:n_hosts]
 
     #Initialise pool with eggs and infective stages
-    Pool = [Soil{Float64}(100, 10000) for sp in 1:3]
+    Pool = [Soil{Float64}(100, 10000),
+            Soil{Float64}(),
+            Soil{Float64}()]
 
     #Initialise worms with n. binom draw for adults
-    init_worms(r, p) = Infection{Float64}(0, 0, 0, 0, float(rand(NegativeBinomial(r,p))), 0)
-    pop_infections = [init_worms(p.init_mean, p.k) for i in 1:n_hosts, p in pars]
+    pop_infections = [initworms(p.init_mean, p.k) for i in 1:n_hosts, p in pars]
 
     #Initialise worms burdens based on initial adult burdens
     WBs = update_WBs(pop_infections, pars, n_hosts)
@@ -231,7 +243,6 @@ function main(n_runs, n_hosts, pars, av_age, ts, halflife, pc_dr, stool_samp)
   ages, Pool, pop_infections, WBs = SystemSetUp(n_hosts, pars, av_age)
 
   #For storing summary statistics
-  #eggs = zeros(Float64, n_hosts, 3)
   EC = zeros(Float64, n_runs, 3)
   prevs = zeros(Float64, n_runs, 3)
 
@@ -249,22 +260,33 @@ function main(n_runs, n_hosts, pars, av_age, ts, halflife, pc_dr, stool_samp)
   end
 
   #Get final distribution of eggs
-  #for sp in 1:3
-    #eggs[:,sp] = [(x.EOut/(365*ts)) for x in pop_infections[:,sp]]
-  #end
+  eggs = zeros(Float64, n_hosts, 3)
+  for sp in 1:3
+    eggs[:,sp] = [(x.EOut/(365*ts)) for x in pop_infections[:,sp]]
+  end
 
-  return EC, prevs
+  PEL = zeros(Float64, n_hosts, 3)
+  for sp in 1:3
+    PEL[:,sp] = [(x.PEL/(365*ts)) for x in pop_infections[:,sp]]
+  end
+
+  return EC, prevs, eggs, PEL
 end
 
 # ## Example run
 
-#Usually takes 10 - 15 seconds
-@time EC, prevs = main(5000, 5000, SpPars, 18.2, ts, halflife, pc_dr, stool_samp)
+@time EC, prevs, eggs, PEL = main(2000, 5000, SpPars, 18.2, ts, halflife, pc_dr, stool_samp)
 
 # ### Plot output
 # Plots the egg counts and prevalence of each species. y1 = N. americanus, y2 = Ascaris, y3 = Trichuris.
 
 using Plots
 
-plot(1:5000, EC)
-plot(1:5000, prevs)
+plot(1:2000, EC[1:2000,:])
+plot(1000:2000, prevs[1000:2000,:])
+
+EC
+PEL
+
+histogram(eggs[:,1])
+histogram(PEL[:,1])
