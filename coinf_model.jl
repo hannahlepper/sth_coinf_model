@@ -320,9 +320,9 @@ plot(1:1000, EC[1:1000,:])
 # as individuals age they slowly get up to equilibrium worm burden values.
 # When an individual is re-set, the worm burdens of the later stages are very far
 # away from the equilibrium values.
-# If the pc_dr is LOW and there are few deaths, the left skew is caused by a smaller
+# If the pc_dr is low and there are few deaths, the left skew is caused by a smaller
 # number of low values.
-# If the pc_dr is high and there are lots of deaths, the left skew is removed and
+# If the pc_dr is high and there are lots of deaths, the left skew is
 # replaced with a right skew as the average age in the population drops and individuals
 # are more often re-set to zero.
 # I need therefore to choose the death rate carefully. The death rate in Sri Lanka
@@ -380,8 +380,7 @@ Na_AW_sol = AW_sol(SpPars[1].M_ll, SpPars[1].mu_adults, 9.9)
 Al_AW_sol = AW_sol(SpPars[2].M_ll, SpPars[2].mu_adults, 6.6)
 Tt_AW_sol = AW_sol(SpPars[3].M_ll, SpPars[3].mu_adults, 62.3)
 
-# Same steps for egg - I think that the density dependence is having an od effect
-# here.
+# Same steps for egg outputs
 
 EOut_sol = function (EL, M_ll, activation, halflife, modulation,
   dens_effect, AW, WfN)
@@ -391,7 +390,7 @@ EOut_sol = function (EL, M_ll, activation, halflife, modulation,
   AW/2 * WfN * mod
 end
 
-#Not working
+#Not right - depends on death rate too much
 Na_EOut_sol = EOut_sol(9.9, SpPars[1].M_ll, SpPars[1].Immf_activation,
                       halflife, 1, SpPars[1].dens_effect, 331, SpPars[1].WfN)
 Al_EOut_sol = EOut_sol(6.6, SpPars[2].M_ll, SpPars[2].Immf_activation,
