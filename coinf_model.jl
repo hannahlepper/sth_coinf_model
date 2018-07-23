@@ -103,9 +103,12 @@ Soil{T}() where T = Soil{T}(0,0)
 
 function update_Infection(i, WB, IS, halflife, p)
     #New infections
-    mean = 10#p.b * IS
+    mean = 5 #fixed acquisition
+    #mean = p.b * IS #Non fixed acquisition
+    #
     if mean > 0
-        exposure = mean#float(rand(Poisson(mean)))
+        #exposure = mean
+        exposure = float(rand(Poisson(mean)))
         #exposure = float(rand(NegativeBinomial(1, (mean/(mean+p.k)))))
     else
         exposure = 0.0
@@ -128,6 +131,7 @@ function update_Infection(i, WB, IS, halflife, p)
     #New established larvae
     newEL = ((1-p.mu_ll) * i.EL) + (p.M_le * newPEL * exp(-Imme))
     EL = newEL * (1-p.M_ll)
+    @assert EL >= 0 "EL < 0"
 
     #Anti fecundity immunity
     activation = newEL * p.Immf_activation
@@ -139,7 +143,8 @@ function update_Infection(i, WB, IS, halflife, p)
     Immf = ((0.5^(1/halflife) * i.Immf) + activation) * modulation
 
     #New adults
-    AW = ((1-p.mu_adults) * i.AW) + (p.M_le * newEL)
+    AW = ((1-p.mu_adults) * i.AW) + (p.M_ll * newEL)
+    @assert AW >= 0 "AW < 0"
 
     #New eggs
     modulation = exp(-(Immf + (p.dens_effect * AW/2)))
@@ -187,7 +192,7 @@ function initworms(init_mean, k)
   if init_mean == 0
     Infection{Float64}()
   else
-    Infection{Float64}(0, 0, 0, 0, float(rand(NegativeBinomial(k, (1-k)/(init_mean + k)))), 0)
+    Infection{Float64}(0, 0, 0, 0, float(rand(NegativeBinomial(k, (k)/(init_mean + k)))), 0)
   end
 end
 
@@ -196,9 +201,7 @@ function SystemSetUp(n_hosts, pars, av_age)
     ages = [abs(rand(Normal(av_age, av_age))) for i in 1:n_hosts]
 
     #Initialise pool with eggs and infective stages
-    Pool = [Soil{Float64}(100, 10000),
-            Soil{Float64}(),
-            Soil{Float64}()]
+    Pool = [Soil{Float64}() for sp in 1:3]
 
     #Initialise worms with n. binom draw for adults
     pop_infections = [initworms(p.init_mean, p.k) for i in 1:n_hosts, p in pars]
@@ -208,6 +211,7 @@ function SystemSetUp(n_hosts, pars, av_age)
     return ages, Pool, pop_infections, WBs
 end
 
+
 function run_mod(n_hosts, pars, ts, halflife, pop_infections, Pool, ages, WBs, pc_dr)
 
     #Update ages and remove some individuals
@@ -216,16 +220,15 @@ function run_mod(n_hosts, pars, ts, halflife, pop_infections, Pool, ages, WBs, p
 
     #Species specific calculations
     for sp in 1:3
-        p = SpPars[sp]
-        IS = Pool[sp].IS
 
         #Per host calculations
         for i in 1:n_hosts
-            pop_infections[i, sp] = update_Infection(pop_infections[i, sp], WBs[i], IS, halflife, p)
+            pop_infections[i, sp] = update_Infection(pop_infections[i, sp], WBs[i],
+                                        Pool[sp].IS, halflife, SpPars[sp])
         end
 
         #Update pool
-        Pool[sp] = update_pool(Pool[sp], pop_infections[:, sp], p)
+        Pool[sp] = update_pool(Pool[sp], pop_infections[:, sp], SpPars[sp])
     end
 
     #Update worm burdens
@@ -245,17 +248,30 @@ function main(n_runs, n_hosts, pars, av_age, ts, halflife, pc_dr, stool_samp)
   #For storing summary statistics
   EC = zeros(Float64, n_runs, 3)
   prevs = zeros(Float64, n_runs, 3)
+  PEL = zeros(Float64, n_runs, 3)
+  EL = zeros(Float64, n_runs, 3)
+  adults = zeros(Float64, n_runs, 3)
+  EOut = zeros(Float64, n_runs, 3)
+  host_monitor = [Infection{Float64}() for i in 1:n_runs, p in pars]
 
   #Loop through the runs
   for r in 1:n_runs
     ages, pop_infections, Pool, WBs = run_mod(n_hosts, pars, ts, halflife, pop_infections, Pool, ages, WBs, pc_dr)
 
-      #get mean egg counts and prev for whole run
+      #Get means for whole run
       for sp in 1:3
-        #Take mean egg output from only infected individuals?
+
         eggs = [x.EOut for x in pop_infections[:,sp]]
-        EC[r,sp] = mean(eggs)/(365 * ts) * stool_samp
+        EC[r,sp] = mean(eggs)/(365 * ts) * stool_samp #scale to match faecal sample size
+
         prevs[r,sp] = count(i -> i > 0.0, x.AW for x in pop_infections[:,sp])/n_hosts
+
+        PEL[r,sp] = mean([x.PEL for x in pop_infections[:,sp]])
+        EL[r,sp] = mean([x.EL for x in pop_infections[:,sp]])
+        adults[r,sp] = mean([x.AW for x in pop_infections[:,sp]])
+        EOut[r, sp] = mean([x.EOut for x in  pop_infections[:, sp]])
+        host_monitor[r,sp] = pop_infections[1,sp]
+
       end
   end
 
@@ -264,29 +280,125 @@ function main(n_runs, n_hosts, pars, av_age, ts, halflife, pc_dr, stool_samp)
   for sp in 1:3
     eggs[:,sp] = [(x.EOut/(365*ts)) for x in pop_infections[:,sp]]
   end
-
-  PEL = zeros(Float64, n_hosts, 3)
+  AW = zeros(Float64, n_hosts, 3)
   for sp in 1:3
-    PEL[:,sp] = [(x.PEL/(365*ts)) for x in pop_infections[:,sp]]
+    AW[:,sp] = [(x.AW/(365*ts)) for x in pop_infections[:,sp]]
+  end
+  f_PEL = zeros(Float64, n_hosts, 3)
+  for sp in 1:3
+    f_PEL[:,sp] = [(x.PEL/(365*ts)) for x in pop_infections[:,sp]]
+  end
+  f_EL = zeros(Float64, n_hosts, 3)
+  for sp in 1:3
+    f_EL[:,sp] = [(x.EL/(365*ts)) for x in pop_infections[:,sp]]
   end
 
-  return EC, prevs, eggs, PEL
+  return EC, prevs, PEL, EL, adults, EOut, eggs, AW, f_PEL, f_EL
 end
 
 # ## Example run
 
-@time EC, prevs, eggs, PEL = main(2000, 5000, SpPars, 18.2, ts, halflife, pc_dr, stool_samp)
+@time EC, prevs, PEL, EL, adults, EOut, eggs, AW, f_PEL, f_EL = main(1000, 1000, SpPars,
+  18.2, ts, halflife, 1/72 * ts, stool_samp)
 
 # ### Plot output
-# Plots the egg counts and prevalence of each species. y1 = N. americanus, y2 = Ascaris, y3 = Trichuris.
+# SO MANY PLOTS. I hope there are enough!
 
 using Plots
 
-plot(1:2000, EC[1:2000,:])
-plot(1000:2000, prevs[1000:2000,:])
+# Means at each time step.
+# y1 = Na, y2 = Al, y3 = Tt
+plot(1:1000, PEL[1:1000,:]) #pre-established larvae - as expected
+plot(1:1000, EL[1:1000,:]) #established larvae - as expected
+plot(1:1000, adults[1:1000,:]) #adult worms
+plot(1:1000, EOut[1:1000,:]) #Eggs per host (all eggs per time step)
+plot(1:1000, EC[1:1000,:])
 
-EC
-PEL
+# Histograms of final/steady
+# The later in the worm stages these plots get, the more left skewed they get.
+# I played with the population death rate and found that what happens is that
+# as individuals age they slowly get up to equilibrium worm burden values.
+# When an individual is re-set, the worm burdens of the later stages are very far
+# away from the equilibrium values.
+# If the pc_dr is LOW and there are few deaths, the left skew is caused by a smaller
+# number of low values.
+# If the pc_dr is high and there are lots of deaths, the left skew is removed and
+# replaced with a right skew as the average age in the population drops and individuals
+# are more often re-set to zero.
+# I need therefore to choose the death rate carefully. The death rate in Sri Lanka
+# around the time the data was collected was 7.007 per 1000 people, and the life
+# expectancy was 72.0.
+# This seems to be key in explaining the odd behaviour of the model and maybe it
+# indicates that age-specific parameters are going to be essential.
+
+histogram(f_PEL[:,1])
+histogram(f_PEL[:,2])
+histogram(f_PEL[:,3])
+
+histogram(f_EL[:,1])
+histogram(f_EL[:,2])
+histogram(f_EL[:,3])
+
+histogram(AW[:,1])
+histogram(AW[:,2])
+histogram(AW[:,3])
 
 histogram(eggs[:,1])
-histogram(PEL[:,1])
+histogram(eggs[:,2])
+histogram(eggs[:,3])
+
+# Prevalence is almost always 100% here - because of constant exposure
+plot(1:1000, prevs[1:1000,:])
+
+# ### Checks of basic model functions
+# Solve PEL equation:
+# PEL = ((1-p.mu_le) * (1-p.M_le) * i.PEL)) + ((1-p.M_le) * exposure)
+
+# If at equilibrium, PEL = i.PEL, solution is:
+function PEL_sol(M_le, mu_le, exposure)
+  (exposure * (1-M_le))/((mu_le * -M_le) + mu_le + M_le)
+end
+
+#works!!
+Na_PEL_sol = PEL_sol(SpPars[1].M_le, SpPars[1].mu_le, 5)
+Al_PEL_sol = PEL_sol(SpPars[2].M_le, SpPars[2].mu_le, 5)
+Tt_PEL_sol = PEL_sol(SpPars[3].M_le, SpPars[3].mu_le, 5)
+
+# Tt is always 0; this is planned, the worms do not spend very much
+# time as pre-establishment larvae
+
+# Same steps for adults; equation is:
+# AW = ((1-p.mu_adults) * i.AW) + (p.M_ll * newEL)
+
+function AW_sol(M_ll, mu_adults, EL)
+  newEL = EL/(1-M_ll)
+  (M_ll * newEL)/mu_adults
+end
+
+#works!!!
+Na_AW_sol = AW_sol(SpPars[1].M_ll, SpPars[1].mu_adults, 9.9)
+Al_AW_sol = AW_sol(SpPars[2].M_ll, SpPars[2].mu_adults, 6.6)
+Tt_AW_sol = AW_sol(SpPars[3].M_ll, SpPars[3].mu_adults, 62.3)
+
+# Same steps for egg - I think that the density dependence is having an od effect
+# here.
+
+EOut_sol = function (EL, M_ll, activation, halflife, modulation,
+  dens_effect, AW, WfN)
+  act = (EL/(1-M_ll)) * activation
+  Immf = act/(1-(0.5^1/halflife))
+  mod = exp(-Immf + (dens_effect * AW/2)) #females only
+  AW/2 * WfN * mod
+end
+
+#Not working
+Na_EOut_sol = EOut_sol(9.9, SpPars[1].M_ll, SpPars[1].Immf_activation,
+                      halflife, 1, SpPars[1].dens_effect, 331, SpPars[1].WfN)
+Al_EOut_sol = EOut_sol(6.6, SpPars[2].M_ll, SpPars[2].Immf_activation,
+                      halflife, 1, SpPars[2].dens_effect, 400, SpPars[2].WfN)
+Tt_EOut_sol = EOut_sol(62.3, SpPars[3].M_ll, SpPars[3].Immf_activation,
+                      halflife, 1, SpPars[3].dens_effect, 488, SpPars[3].WfN)
+
+mean(eggs[:,1])
+mean(eggs[:,2])
+mean(eggs[:,3])
