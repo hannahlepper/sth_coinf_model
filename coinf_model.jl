@@ -364,6 +364,3 @@ histogram(acquisition, legend = false)
 # Now we try the density dependent component
 acquisition_density_dependent = map(i -> i^exp(-(i * 0.1)), acquisition)
 histogram(acquisition_density_dependent, legend = false)
-
-ages = [rand(Exponential(18.2)) for i in 1:2000]
-histogram(ages)
