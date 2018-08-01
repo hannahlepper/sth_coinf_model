@@ -361,7 +361,7 @@ risk = rand(Gamma(0.3, 1/0.3), 1000)
 acquisition = map(i -> rand(Poisson(100 * i)), risk)
 histogram(acquisition, legend = false)
 
-#Now we try the density dependent component
+# Now we try the density dependent component
 acquisition_density_dependent = map(i -> i^exp(-(i * 0.1)), acquisition)
 histogram(acquisition_density_dependent, legend = false)
 
