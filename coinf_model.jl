@@ -10,6 +10,9 @@ const av_age = 18.2 #Initial average age in years in population - used very roug
 const pc_dr = 8/1000 * ts #per capita death rate
 const stool_samp = 0.054 #Stool sample used in measuring egg deposition
 
+# ### Age specific death rates
+# Source: Table 7 in http://www.statistics.gov.lk/PopHouSat/Life%20Table%20Report%202001_7th%20July%202009.pdf
+
 age_specific_death_rates = vcat(
         repeat([0.00045 * ts], inner = 5),
         repeat([0.00078 * ts], inner = 10),
@@ -22,8 +25,6 @@ age_specific_death_rates = vcat(
         repeat([0.22017 * ts], inner = 10),
         repeat([1],inner = 100))
 
-# Source: Table 7 in http://www.statistics.gov.lk/PopHouSat/Life%20Table%20Report%202001_7th%20July%202009.pdf
-# Age specific death rates
 
 # ### Worm species specific parameters
 
