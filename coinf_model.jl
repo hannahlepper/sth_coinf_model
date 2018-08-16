@@ -5,11 +5,25 @@ using Distributions #Package contaning negative binomial distribution
 # ### Global parameters
 
 const ts = 1/73 #time step in years; 5 days
-const halflife = 8.1 #halflife of immunity in hosts in days
+const halflife = 8.1/365 * ts #halflife of immunity in hosts in days
 const av_age = 18.2 #Initial average age in years in population - used very roughly
 const pc_dr = 8/1000 * ts #per capita death rate
 const stool_samp = 0.054 #Stool sample used in measuring egg deposition
 
+age_specific_death_rates = vcat(
+        repeat([0.00045 * ts], inner = 5),
+        repeat([0.00078 * ts], inner = 10),
+        repeat([0.00320 * ts], inner = 15),
+        repeat([0.00429 * ts], inner = 10),
+        repeat([0.00890 * ts], inner = 10),
+        repeat([0.01946 * ts], inner = 10),
+        repeat([0.04245 * ts], inner = 10),
+        repeat([0.09133 * ts], inner = 10),
+        repeat([0.22017 * ts], inner = 10),
+        repeat([1],inner = 100))
+
+# Source: Table 7 in http://www.statistics.gov.lk/PopHouSat/Life%20Table%20Report%202001_7th%20July%202009.pdf
+# Age specific death rates
 
 # ### Worm species specific parameters
 
@@ -177,9 +191,12 @@ end
 # Select all individuals over 80 years old and randomly  select from the rest of
 # the population - reset ages and infections so population size remains constant
 
-function reset_inds_sys(population, ages, risk, pc_dr, pars)
+function get_age_index(age) ifelse(age <= 0.5, 1, Int(round(age))) end
+
+function reset_inds_sys(population, ages, risk, death_rates, pars)
   for i = 1:length(ages)
-    if ages[i] > 80 || rand(Binomial(1, pc_dr)) == 1
+    #@assert ages[i] < 100 "age > 100"
+    if rand(Binomial(1, death_rates[get_age_index(ages[i])])) == 1
       population[i, 1:3] .= Infection{Float64}()
       ages[i] = 0
       risk[i, 1:3] = [rand(Gamma(p.k, 1/p.k)) for p in pars]
@@ -204,7 +221,7 @@ end
 
 function SystemSetUp(n_hosts, pars, av_age)
     #Initialise ages, assume exponential type population structure
-    ages = [rand(Exponential(av_age)) for i in 1:n_hosts]
+    ages = [rand(Uniform(0, 80)) for i in 1:n_hosts]
 
     #New and exciting: gamma distributed risk
     risk = [rand(Gamma(p.k, 1/p.k)) for i in 1:n_hosts, p in pars]
@@ -221,11 +238,11 @@ function SystemSetUp(n_hosts, pars, av_age)
 end
 
 
-function run_mod(n_hosts, pars, ts, halflife, pop_infections, Pool, ages, WBs, pc_dr, risk)
+function run_mod(n_hosts, pars, ts, halflife, pop_infections, Pool, ages, WBs, death_rates, risk)
 
     #Update ages and remove some individuals
     ages = update_ages(ages, ts)
-    pop_infections, ages, risk = reset_inds_sys(pop_infections, ages, risk, pc_dr, pars)
+    pop_infections, ages, risk = reset_inds_sys(pop_infections, ages, risk, death_rates, pars)
 
     #Species specific calculations
     for sp in 1:3
@@ -249,7 +266,7 @@ end
 # Note on order in run_mod function: WB happens outside of the species and host
 # loop because it needs information from all species in the whole population
 
-function main(n_runs, n_hosts, pars, av_age, ts, halflife, pc_dr, stool_samp)
+function main(n_runs, n_hosts, pars, av_age, ts, halflife, death_rates, stool_samp)
 
   #Set arrays up
   ages, risk, Pool, pop_infections, WBs = SystemSetUp(n_hosts, pars, av_age)
@@ -266,7 +283,7 @@ function main(n_runs, n_hosts, pars, av_age, ts, halflife, pc_dr, stool_samp)
   #Loop through the runs
   for r in 1:n_runs
     ages, pop_infections, Pool, WBs = run_mod(n_hosts, pars, ts, halflife,
-        pop_infections, Pool, ages, WBs, pc_dr, risk)
+        pop_infections, Pool, ages, WBs, death_rates, risk)
 
       #Get means for whole run
       for sp in 1:3
@@ -308,8 +325,8 @@ end
 
 # ## Example run
 
-@time EC, prevs, PEL, EL, adults, EOut, eggs, AW, f_PEL, f_EL, soil, ages = main(1500, 2000, SpPars,
-  18.2, ts, halflife, pc_dr, stool_samp)
+@time EC, prevs, PEL, EL, adults, EOut, eggs, AW, f_PEL, f_EL, soil, ages = main(1000, 2000, SpPars,
+  18.2, ts, halflife, age_specific_death_rates, stool_samp)
 
 # ### Plot output
 using Plots
@@ -318,25 +335,25 @@ using Plots
 # y1 = Na, y2 = Al, y3 = Tt
 
  # Pre-established larvae
-plot(1:1500, PEL[1:1500,:], title = "mean pre-establishment larvae", label = ["N", "A", "T"])
+plot(1:1000, PEL[1:1000,:], title = "mean pre-establishment larvae", label = ["N", "A", "T"])
 
 # Established larvae
-plot(1:1500, EL[1:1500,:], title = "mean established larvae", label = ["N", "A", "T"])
+plot(1:1000, EL[1:1000,:], title = "mean established larvae", label = ["N", "A", "T"])
 
 # Adult worms - the poisson draw now happens to as worms enter the adult phase
-plot(1:1500, adults[1:1500,:], title = "mean adult worms", label = ["N", "A", "T"])
+plot(1:1000, adults[1:1000,:], title = "mean adult worms", label = ["N", "A", "T"])
 
 # All eggs per host
-plot(1:1500, EOut[1:1500,:], title = "mean egg output", label = ["N", "A", "T"])
+plot(1:1000, EOut[1:1000,:], title = "mean egg output", label = ["N", "A", "T"])
 
 # Egg count per host
-plot(1:1500, EC[1:1500,:], title = "mean measured egg deposition", label = ["N", "A", "T"])
+plot(1:1000, EC[1:1000,:], title = "mean measured egg deposition", label = ["N", "A", "T"])
 
 # Prevalence - positives numbers of adult worms
-plot(1:1500, prevs[1:1500,:], title = "prevalence", label = ["N", "A", "T"])
+plot(1:1000, prevs[1:1000,:], title = "prevalence", label = ["N", "A", "T"])
 
 # Infective stages in the soil, absolute numbers
-plot(1:1500, soil[1:1500,:], title = "absolute numbers infective soil stages", label = ["N", "A", "T"])
+plot(1:1000, soil[1:1000,:], title = "absolute numbers infective soil stages", label = ["N", "A", "T"])
 
 # Histograms of final time step (should be stedy) - reassuringly these are all negative binomial looking.
 # Printed below on the notebook is the histogram of Trichuris adult worms in the population
@@ -346,9 +363,9 @@ histogram(AW[:,2], legend = false, title = "Ascaris")
 histogram(AW[:,3], legend = false, title = "Trichuris")
 
 # The histogram of the eggs per individual at the end of the simulation is not as nicely negative binomial.
-histogram(eggs[:,1], bins = 100, legend = false, title = "N.americanus")
 histogram(eggs[:,2], legend = false, title = "Ascaris")
 histogram(eggs[:,3], legend = false, title = "Trichuris")
+histogram(eggs[:,1], bins = 100, legend = false, title = "N.americanus")
 
 # I am not sure what is caugin this -
 # it may be do do with the birth-death process, which is not maintaining an exponential distribution.
