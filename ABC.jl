@@ -1,67 +1,96 @@
-using DataFrames
+using Distributions
 
-#Summary statistics
-#Calculated from the first two surveys from the Sri Lankan dataset
-#I use logs of raw egg counts, so that the data is more normal and
-#using SD in measuring the distance is more valid.
+#Summary statistics - need changing, plan to use mean and k from Sri Lanka dataset.
+#These are currently dummy numbers.
 #The order is always N. americanus, Ascaris, Trichuris
-ec = [2.278871, 4.793951, 2.769747]
-ec_sd = [1.365808, 2.003533, 1.551476]
-p = [0.2851153, 0.5262055, 0.6750524]
-p_sd = [0.02067136, 0.02286196, 0.02144451]
+mean_obs = [14, 4.793951, 2.769747]
+k_obs = [0.2851153, 0.5262055, 0.6750524]
 
-#Prior particles
-beta_pri_N_a = rand(Uniform(1e-12, 2e-12), 33)
-beta_pri_A_l = rand(Uniform(1e-13, 2e-13), 33)
-beta_pri_T_t = rand(Uniform(3e-14, 4e-14), 33)
+sd_mean = [14, 14, 14]
+sd_k = [0.1, 0.1, 0.1]
 
-#Map model over priors
-fit_model_run = function(beta_priors)
-  main(10000, 1000, SpPars, 18.2, ts, halflife, pc_dr, stool_samp, beta_priors)
+#Prior particles - using uniform distribution
+a = rand(Uniform(0, 1), 333)
+b = rand(Uniform(0, 1), 333)
+c = rand(Uniform(0, 1), 333)
+
+#Map model over priors.
+#Use toy model for experimenting
+function fit_model_run(pars)
+  rand(NegativeBinomial(0.3, 0.3/(10 * sum(pars) + 0.3)), 100)
 end
 
-prep_data_set = function(data, sp)
-  ds = DataFrame(ec = 0., p = 0.)
-  for i in data
-    push!(ds, hcat(i[1][sp], i[2][sp]))
-  end
-  deleterows!(ds, 1)
-  return ds
+#fit_model_run = function(beta_priors)
+  #main(10000, 1000, SpPars, 18.2, ts, halflife, pc_dr, stool_samp, beta_priors)
+#end
+
+#Generate simulated dataset
+sim_ds = zeros(Int64, 333, 100)
+
+for s in 1:333
+  sim_ds[s,:] = fit_model_run([a[s], b[s], c[s]])
 end
 
-N_a = [fit_model_run([x, mean(beta_pri_A_l), mean(beta_pri_T_t)]) for x in beta_pri_N_a]
-N_a = prep_data_set(N_a, 1)
+#Extract summary statistics
 
-A_l = [fit_model_run([mean(beta_pri_N_a), x, mean(beta_pri_T_t)]) for x in beta_pri_A_l]
-A_l = prep_data_set(A_l, 1)
+#Need an R function; returns the k and mean of the distribution
+using RCall
+R"source('fitNB.R')"
+@rget fit_nb
 
-T_t = [fit_model_run([mean(beta_pri_N_a), mean(beta_pri_A_l), x]) for x in beta_pri_T_t]
-T_t = prep_data_set(T_t, 1)
-
-
-#Calculate euclidean distance
-ds[:wb_d] = repeat(wb, inner = 5) .- ds[:wb]
-ds[:p_d] = repeat(p, inner = 5) .- ds[:p]
-
-euc_dist = function(dists, sds)
-    ss(d, sd) = ( d / sd ) ^ 2
-    sum([ss(dists[i], sds[i]) for i in 1:length(dists)]) ^ 1/2
+fitted_vals = zeros(Float64, 333, 2)
+for s in 1:333
+  fitted_vals[s,:] = fit_nb(sim_ds[s,:])
 end
 
-wb_sd = repeat(wb_sd, inner = 5)
-p_sd = repeat(p_sd, inner = 5)
+#Calculate basic distances
+dists = zeros(Float64, 333, 2)
+dists[:,1] = fitted_vals[:,1] .- k_obs[1]
+dists[:,2] = fitted_vals[:,2] .- mean_obs[1]
 
-euc_dist_data = Float64[]
-for i in 1:nrow(ds)
-    push!(euc_dist_data, euc_dist([ds[:wb_d][i], ds[:p_d][i]],
-                                  [wb_sd[i], p_sd[i]] ) )
+#Calculate standardised euclidean distance - from Mahalanobis page Wikipedia
+function euc(dists, sds)
+    ss(d, sd) = ( d^2 / sd^2 )
+    sqrt(sum([ss(dists[i], sds[i]) for i in 1:length(dists)]))
 end
 
-ds[:euc] = euc_dist_data
+euc_dists = zeros(Float64, 333, 1)
+for s in 1:333
+  euc_dists[s,:] = euc(dists[s,:], [sd_mean[1], sd_k[1]])
+end
 
-ds
+using Plots
+histogram(euc_dists[:,1])
 
 #Get posteriors
-#Squeeze posteriors
+#Accept small percent
 
-Pkg.update()
+accept = find(i -> i < 6, euc_dists) #35 kept
+a_accept = a[accept]
+b_accept = b[accept]
+c_accept = c[accept]
+
+#Print un-squeezed posteriors. Look about right.
+using StatPlots
+density(a_accept)
+density(b_accept)
+density(c_accept)
+
+
+#Squeeze posteriors
+#1. weight according to distance
+
+R"abc_ <- abc::abc"
+@rget abc_
+
+Na_a = abc_([0.3, 15], a, fitted_vals, 0.1, "loclinear")
+Na_b = abc_([0.3, 15], b, fitted_vals, 0.1, "loclinear")
+Na_c = abc_([0.3, 15], c, fitted_vals, 0.1, "loclinear")
+
+Al_a = abc_([0.3, 15], a, fitted_vals, 0.1, "loclinear")
+Al_b = abc_([0.3, 15], b, fitted_vals, 0.1, "loclinear")
+Al_c = abc_([0.3, 15], c, fitted_vals, 0.1, "loclinear")
+
+density(Na_a[:adj_values])
+density(Na_b[:adj_values])
+density(Na_c[:adj_values])
