@@ -10,7 +10,7 @@ const av_age = 18.2 #Initial average age in years in population - used very roug
 const pc_dr = 8/1000 * ts #per capita death rate
 const stool_samp = 0.054 #Stool sample used in measuring egg deposition
 
-# ### Age specific death rates
+# Age specific death rates
 # Source: Table 7 in http://www.statistics.gov.lk/PopHouSat/Life%20Table%20Report%202001_7th%20July%202009.pdf
 
 age_specific_death_rates = vcat(
@@ -25,7 +25,7 @@ age_specific_death_rates = vcat(
         repeat([0.22017 * ts], inner = 10),
         repeat([1],inner = 100))
 
-
+#
 # ### Worm species specific parameters
 
 # Defining a data structure with parameter values that are specific to worm species, which will all be of the same type (class)
@@ -267,67 +267,57 @@ end
 # Note on order in run_mod function: WB happens outside of the species and host
 # loop because it needs information from all species in the whole population
 
-function main(n_runs, n_hosts, pars, av_age, ts, halflife, death_rates, stool_samp)
+function main(n_runs, n_hosts; pars = SpPars, av_age = 18.2, ts_ = ts, halflife_ = halflife,
+              death_rates = age_specific_death_rates,
+              record_run = 0, record_final = 1)
 
   #Set arrays up
   ages, risk, Pool, pop_infections, WBs = SystemSetUp(n_hosts, pars, av_age)
 
   #For storing summary statistics
-  EC = zeros(Float64, n_runs, 3)
-  prevs = zeros(Float64, n_runs, 3)
-  PEL = zeros(Float64, n_runs, 3)
-  EL = zeros(Float64, n_runs, 3)
-  adults = zeros(Float64, n_runs, 3)
-  EOut = zeros(Float64, n_runs, 3)
-  soil = zeros(Float64, n_runs, 3)
+  stages = [:Imme, :Immf, :PEL, :EL, :AW, :EOut, :prev, :soil]
+  if record_run > 0
+    run_record = Dict(s => zeros(Float64, n_runs, 3) for s in stages)
+  else
+    run_record = 0
+  end
 
   #Loop through the runs
   for r in 1:n_runs
-    ages, pop_infections, Pool, WBs = run_mod(n_hosts, pars, ts, halflife,
+    ages, pop_infections, Pool, WBs = run_mod(n_hosts, pars, ts_, halflife_,
         pop_infections, Pool, ages, WBs, death_rates, risk)
 
-      #Get means for whole run
+    #Get records for whole run
+    if record_run > 0
       for sp in 1:3
-
-        eggs = [x.EOut for x in pop_infections[:,sp]]
-        EC[r,sp] = mean(eggs)/(365 * ts) * stool_samp #scale to match faecal sample size
-
-        prevs[r,sp] = count(i -> i > 0.0, x.AW for x in pop_infections[:,sp])/n_hosts
-
-        PEL[r,sp] = mean([x.PEL for x in pop_infections[:,sp]])
-        EL[r,sp] = mean([x.EL for x in pop_infections[:,sp]])
-        adults[r,sp] = mean([x.AW for x in pop_infections[:,sp]])
-        EOut[r, sp] = mean([x.EOut for x in  pop_infections[:, sp]])
-        soil[r, sp] = Pool[sp].IS
-
+        for s in 1:6
+          run_record[stages[s]][r,sp] = mean([getfield(x, s) for x in pop_infections[:,sp]])
+        end
+        run_record[stages[7]][r, sp] = count(i -> i > 0.0, x.AW for x in pop_infections[:,sp])/n_hosts
+        run_record[stages[8]][r,sp] = Pool[sp].IS
       end
+    end
+
   end
 
-  #Get final distribution of eggs
-  eggs = zeros(Float64, n_hosts, 3)
-  for sp in 1:3
-    eggs[:,sp] = [(x.EOut/(365*ts)) for x in pop_infections[:,sp]]
-  end
-  AW = zeros(Float64, n_hosts, 3)
-  for sp in 1:3
-    AW[:,sp] = [(x.AW/(365*ts)) for x in pop_infections[:,sp]]
-  end
-  f_PEL = zeros(Float64, n_hosts, 3)
-  for sp in 1:3
-    f_PEL[:,sp] = [(x.PEL/(365*ts)) for x in pop_infections[:,sp]]
-  end
-  f_EL = zeros(Float64, n_hosts, 3)
-  for sp in 1:3
-    f_EL[:,sp] = [(x.EL/(365*ts)) for x in pop_infections[:,sp]]
+  #Get final distributions
+  if record_final > 0
+    final_record = Dict(s => zeros(Float64, n_hosts, 3) for s in stages[1:6])
+    for sp in 1:3
+      for s in 1:6
+        final_record[stages[s]][:,sp] = [getfield(x, s) for x in pop_infections[:,sp]]
+      end
+    end
+  else
+    final_record = 0
   end
 
-  return EC, prevs, PEL, EL, adults, EOut, eggs, AW, f_PEL, f_EL, soil, ages
+  return run_record, final_record, ages, pop_infections
 end
 
 # ## Example run
 
-@time EC, prevs, PEL, EL, adults, EOut, eggs, AW, f_PEL, f_EL, soil, ages = main(1000, 2000, SpPars,
-  18.2, ts, halflife, age_specific_death_rates, stool_samp)
+@time run_record, final_record, ages, pop_infections = main(1000, 2000, record_run = 1)
 
 # ### Plot output
 using Plots
@@ -336,37 +326,34 @@ using Plots
 # y1 = Na, y2 = Al, y3 = Tt
 
  # Pre-established larvae
-plot(1:1000, PEL[1:1000,:], title = "mean pre-establishment larvae", label = ["N", "A", "T"])
+plot(1:1000, run_record[:PEL][1:1000,:], title = "mean pre-establishment larvae", label = ["N", "A", "T"])
 
 # Established larvae
-plot(1:1000, EL[1:1000,:], title = "mean established larvae", label = ["N", "A", "T"])
+plot(1:1000, run_record[:EL][1:1000,:], title = "mean established larvae", label = ["N", "A", "T"])
 
 # Adult worms - the poisson draw now happens to as worms enter the adult phase
-plot(1:1000, adults[1:1000,:], title = "mean adult worms", label = ["N", "A", "T"])
+plot(1:1000, run_record[:AW][1:1000,:], title = "mean adult worms", label = ["N", "A", "T"])
 
 # All eggs per host
-plot(1:1000, EOut[1:1000,:], title = "mean egg output", label = ["N", "A", "T"])
-
-# Egg count per host
-plot(1:1000, EC[1:1000,:], title = "mean measured egg deposition", label = ["N", "A", "T"])
+plot(1:1000, run_record[:EOut][1:1000,:], title = "mean egg output", label = ["N", "A", "T"])
 
 # Prevalence - positives numbers of adult worms
-plot(1:1000, prevs[1:1000,:], title = "prevalence", label = ["N", "A", "T"])
+plot(1:1000, run_record[:prev][1:1000,:], title = "prevalence", label = ["N", "A", "T"])
 
 # Infective stages in the soil, absolute numbers
-plot(1:1000, soil[1:1000,:], title = "absolute numbers infective soil stages", label = ["N", "A", "T"])
+plot(1:1000, run_record[:soil][1:1000,:], title = "absolute numbers infective soil stages", label = ["N", "A", "T"])
 
 # Histograms of final time step (should be stedy) - reassuringly these are all negative binomial looking.
 # Printed below on the notebook is the histogram of Trichuris adult worms in the population
 # at the end of the simulation.
-histogram(AW[:,1], legend = false, title = "N.americanus")
-histogram(AW[:,2], legend = false, title = "Ascaris")
-histogram(AW[:,3], legend = false, title = "Trichuris")
+histogram(final_record[:AW][:,1], legend = false, title = "N.americanus")
+histogram(final_record[:AW][:,2], legend = false, title = "Ascaris")
+histogram(final_record[:AW][:,3], legend = false, title = "Trichuris")
 
 # The histogram of the eggs per individual at the end of the simulation is not as nicely negative binomial.
-histogram(eggs[:,2], legend = false, title = "Ascaris")
-histogram(eggs[:,3], legend = false, title = "Trichuris")
-histogram(eggs[:,1], bins = 100, legend = false, title = "N.americanus")
+histogram(final_record[:EOut][:,2], legend = false, title = "Ascaris")
+histogram(final_record[:EOut][:,3], legend = false, title = "Trichuris")
+histogram(final_record[:EOut][:,1], bins = 100, legend = false, title = "N.americanus")
 
 # I am not sure what is caugin this -
 # it may be do do with the birth-death process, which is not maintaining an exponential distribution.
