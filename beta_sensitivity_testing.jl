@@ -4,9 +4,9 @@
 include("coinf_model.jl")
 
 # Values of beta for each species, based on trial and error:
-b_N_a_full = linspace(5e-11, 5e-9, 10)
+b_N_a_full = linspace(5e-11, 5e-8, 10)
 b_A_l_full = linspace(5e-11, 5e-8, 10)
-b_T_t_full = linspace(1e-9, 5e-8, 10)
+b_T_t_full = linspace(5e-11, 5e-8, 10)
 
 # Values of k for each species, based on fitted values of k from the Sri Lanka data:
 k_N_a = [0.01, 0.2, 0.4]
@@ -29,7 +29,7 @@ sp_test = function(p_var, p, sp)
     p[sp].k = p_var[i][2]
 
     #rr is 0 (if set run_record = 0 get record of whole run); a is ages
-    rr, final_record, a = main(1000, 2000)
+    rr, final_record, a = main(2000, 2000)
     eggs[:,i] = final_record[:EOut][:,sp]
   end
 
@@ -71,40 +71,40 @@ hline!([0.08], line = (1, :dash, 0.6, :black), label = :target)
 #
 
 # Simulated mu for N. americanus look sensible, target N. a. mu is 6.9.
-N_a_mu = hcat([fit_nb(round(scale_N_a_sensitivity[:,x]))[2] for x in 1:30])#src
-N_a_mu = hcat(N_a_mu[1:10], N_a_mu[11:20], N_a_mu[21:30])#src
+N_a_mu = hcat([fit_nb(round(scale_N_a_sensitivity[:,x]))[2] for x in 1:30])
+N_a_mu = hcat(N_a_mu[1:10], N_a_mu[11:20], N_a_mu[21:30])
 plot(b_N_a_full, N_a_mu,
       title = "Simulated N. americanus EPG mu ~ beta", label = ["k = 0.01", "k = 0.2", "k = 0.4"])
 hline!([6.9], line = (1, :dash, 0.6, :black), label = :target)
 #
 
 # Simulated Ascaris k. Target is 0.1.
-A_l_size = hcat([fit_nb(round(scale_A_l_sensitivity[:,x]))[1] for x in 1:30])#src
-A_l_size = hcat(A_l_size[1:10], A_l_size[11:20], A_l_size[21:30])#src
+A_l_size = hcat([fit_nb(round(scale_A_l_sensitivity[:,x]))[1] for x in 1:30])
+A_l_size = hcat(A_l_size[1:10], A_l_size[11:20], A_l_size[21:30])
 plot(b_A_l_full, A_l_size,
       title = "Simulated Ascaris EPG k ~ beta", label = ["k = 0.01", "k = 0.2", "k = 0.4"])
 hline!([0.1], line = (1, :dash, 0.6, :black), label = :target)
 #
 
 # Simulated Ascaris mu. Target is 249.6
-A_l_mu = hcat([fit_nb(round(scale_A_l_sensitivity[:,x]))[2] for x in 1:30])#src
-A_l_mu = hcat(A_l_mu[1:10], A_l_mu[11:20], A_l_mu[21:30])#src
+A_l_mu = hcat([fit_nb(round(scale_A_l_sensitivity[:,x]))[2] for x in 1:30])
+A_l_mu = hcat(A_l_mu[1:10], A_l_mu[11:20], A_l_mu[21:30])
 plot(b_A_l_full, A_l_mu,
       title = "Simulated Ascaris EPG mu ~ beta", label = ["k = 0.01", "k = 0.2", "k = 0.4"])
 hline!([249.6], line = (1, :dash, 0.6, :black), label = :target)
 #
 
 # Simulated Trichuris k; target is 0.21
-T_t_size = hcat([fit_nb(round(scale_T_t_sensitivity[:,x]))[1] for x in 1:30])#src
-T_t_size = hcat(T_t_size[1:10], T_t_size[11:20], T_t_size[21:30])#src
+T_t_size = hcat([fit_nb(round(scale_T_t_sensitivity[:,x]))[1] for x in 1:30])
+T_t_size = hcat(T_t_size[1:10], T_t_size[11:20], T_t_size[21:30])
 plot(b_T_t_full, T_t_size,
       title = "Simulated Trichuris EPG k ~ beta", label = ["k = 0.11", "k = 0.21", "k = 0.31"])
 hline!([0.21], line = (1, :dash, 0.6, :black), label = :target)
 #
 
 # Simulated Trichuris mu; target 38.8
-T_t_mu = hcat([fit_nb(round(scale_T_t_sensitivity[:,x]))[2] for x in 1:30])#src
-T_t_mu = hcat(T_t_mu[1:10], T_t_mu[11:20], T_t_mu[21:30])#src
+T_t_mu = hcat([fit_nb(round(scale_T_t_sensitivity[:,x]))[2] for x in 1:30])
+T_t_mu = hcat(T_t_mu[1:10], T_t_mu[11:20], T_t_mu[21:30])
 plot(b_T_t_full, T_t_mu,
       title = "Simulated Trichuris EPG mu ~ beta", label = ["k = 0.11", "k = 0.21", "k = 0.31"])
 hline!([38.8], line = (1, :dash, 0.6, :black), label = :target)

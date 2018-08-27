@@ -11,7 +11,7 @@ const pc_dr = 8/1000 * ts #per capita death rate
 const stool_samp = 0.054 #Stool sample used in measuring egg deposition
 
 # Age specific death rates
-# Source: Table 7 in link below
+# Source: Table 7 in link below    
 # http://www.statistics.gov.lk/PopHouSat/Life%20Table%20Report%202001_7th%20July%202009.pdf
 
 age_specific_death_rates = vcat(
@@ -25,6 +25,7 @@ age_specific_death_rates = vcat(
         repeat([0.09133 * ts], inner = 10),
         repeat([0.22017 * ts], inner = 10),
         repeat([1],inner = 100))
+
 #
 
 # ### Worm species specific parameters
@@ -57,29 +58,29 @@ end
 
 # Inputting parameters for each species
 N_a = Par{Float64}(
-    1e-9,
+    1e-8,#1e-9,
     0.00, 0.00, #1,2,3
     20000 * 365 * ts, 0.067 * 365 * ts, 0.00182 * 365 * ts, #4,5,6
     0.00182 * 365 * ts, 0.07 * 365 * ts, 0.0467 * 365 * ts, #7,8,9
     0.011 * 365 * ts, 0.11 * 365 * ts, 0.15 * 365 * ts, #10,11,12
-    0.019, 0.08, 0.037, 0, 0, 16.34) #13,14,15,16,17,18 0.26
+    0.055, 0.08, 0.037, 0, 0, 16.34) #13,14,15,16,17,18 0.26
 
 
 A_l = Par{Float64}(
-    01e-11,
+    01e-8,
     0.00, 0.00, #1,2,3
     200000 * 365 * ts, 0.067 * 365 * ts, 0.00183 * 365 * ts, #4,5,6
     0.00183 * 365 * ts, 0.10 * 365 * ts, 0.0714 * 365 * ts, #7,8,9
     0.0085 * 365 * ts, 0.0286 * 365 * ts, 0.03 * 365 * ts, #10,11,12
-    0.00425, 0.1, 1, 0, 0, 434) #13,14,15,16,17,18 0.34
+    0.03, 0.1, 1, 0, 0, 434) #13,14,15,16,17,18 0.34
 
 T_t = Par{Float64}(
-    01e-9,
+    01e-8,
     0.00, 0.00, #1,2,3
     20000 * 365 * ts, 1, 0.00182 * 365 * ts, #4,5,6
     0.00182 * 365 * ts, min(0.4 * 365 * ts, 1), 0.0133 * 365 * ts, #7,8,9
     0.00192 * 365 * ts, 0.0286 * 365 * ts, 0.05 * 365 * ts, #10,11,12
-    0.001, 0.21, 0.0148, 0, 0, 38.79) #13,14,15,16,17,18
+    0.01, 0.21, 0.0148, 0, 0, 38.79) #13,14,15,16,17,18
 
 # Can keep these three Pars structs in an array, accessing as SpPars[1] etc
 SpPars = [N_a, A_l, T_t]
@@ -318,31 +319,34 @@ end
 
 # ## Example run
 
-@time run_record, final_record, ages = main(1000, 2000, record_run = 1)
+n_runs = 1500
+n_hosts = 2000
+@time run_record, final_record, ages = main(n_runs, n_hosts, record_run = 1)
 
 # ### Plot output
 using Plots
+using StatPlots
 
 # Plots of each time step.
 # y1 = Na, y2 = Al, y3 = Tt
 
  # Pre-established larvae
-plot(1:1000, run_record[:PEL][1:1000,:], title = "mean pre-establishment larvae", label = ["N", "A", "T"])
+plot(1:n_runs, run_record[:PEL][1:n_runs,:], title = "mean pre-establishment larvae", label = ["N", "A", "T"])
 
 # Established larvae
-plot(1:1000, run_record[:EL][1:1000,:], title = "mean established larvae", label = ["N", "A", "T"])
+plot(1:n_runs, run_record[:EL][1:n_runs,:], title = "mean established larvae", label = ["N", "A", "T"])
 
 # Adult worms - the poisson draw now happens to as worms enter the adult phase
-plot(1:1000, run_record[:AW][1:1000,:], title = "mean adult worms", label = ["N", "A", "T"])
+plot(1:n_runs, run_record[:AW][1:n_runs,:], title = "mean adult worms", label = ["N", "A", "T"])
 
 # All eggs per host
-plot(1:1000, run_record[:EOut][1:1000,:], title = "mean egg output", label = ["N", "A", "T"])
+plot(1:n_runs, run_record[:EOut][1:n_runs,:], title = "mean egg output", label = ["N", "A", "T"])
 
 # Prevalence - positives numbers of adult worms
-plot(1:1000, run_record[:prev][1:1000,:], title = "prevalence", label = ["N", "A", "T"])
+plot(1:n_runs, run_record[:prev][1:n_runs,:], title = "prevalence", label = ["N", "A", "T"])
 
 # Infective stages in the soil, absolute numbers
-plot(1:1000, run_record[:soil][1:1000,:], title = "absolute numbers infective soil stages", label = ["N", "A", "T"])
+plot(1:n_runs, run_record[:soil][1:n_runs,:], title = "absolute numbers infective soil stages", label = ["N", "A", "T"])
 
 # Histograms of final time step (should be stedy) - reassuringly these are all negative binomial looking.
 # Printed below on the notebook is the histogram of Trichuris adult worms in the population
@@ -352,11 +356,11 @@ histogram(final_record[:AW][:,2], legend = false, title = "Ascaris")
 histogram(final_record[:AW][:,3], legend = false, title = "Trichuris")
 
 # The histogram of the eggs per individual at the end of the simulation is not as nicely negative binomial.
-histogram(final_record[:EOut][:,2], legend = false, title = "Ascaris")
-histogram(final_record[:EOut][:,3], legend = false, title = "Trichuris")
-histogram(final_record[:EOut][:,1], bins = 100, legend = false, title = "N.americanus")
+density(final_record[:EOut][:,2], legend = false, title = "Ascaris")
+density(final_record[:EOut][:,1], legend = false, title = "Trichuris")
+density(final_record[:EOut][:,3], bins = 100, legend = false, title = "N.americanus")
 
-# I am not sure what is caugin this -
+# I am not sure what is causing this -
 # it may be do do with the birth-death process, which is not maintaining an exponential distribution.
 # To demonstrate, a histogram of ages in the population at the end of the simulation.
 histogram(ages, legend = false, title = "age")
