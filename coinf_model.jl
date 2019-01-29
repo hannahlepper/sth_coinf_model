@@ -11,9 +11,8 @@ const pc_dr = 8/1000 * ts #per capita death rate
 const stool_samp = 0.054 #Stool sample used in measuring egg deposition
 
 # Age specific death rates
-# Source: Table 7 in link below    
+# Source: Table 7 in link below
 # http://www.statistics.gov.lk/PopHouSat/Life%20Table%20Report%202001_7th%20July%202009.pdf
-
 age_specific_death_rates = vcat(
         repeat([0.00045 * ts], inner = 5),
         repeat([0.00078 * ts], inner = 10),
@@ -34,7 +33,6 @@ age_specific_death_rates = vcat(
 # Can access elements in the structure using '.', e.g `N_a.b`
 # T means type, e.g. Int, Float64.
 # The struct is mutable so that parameters can vary if necessary
-
 mutable struct Par{T}
   b                    ::T   # 1.rate of exposure per day - has to be v v low
   Imme_activation      ::T   # 2.to fit - activation of immunity per worm
@@ -69,7 +67,7 @@ N_a = Par{Float64}(
 A_l = Par{Float64}(
     01e-8,
     0.00, 0.00, #1,2,3
-    200000 * 365 * ts, 0.067 * 365 * ts, 0.00183 * 365 * ts, #4,5,6
+    2000000 * 365 * ts, 0.067 * 365 * ts, 0.00183 * 365 * ts, #4,5,6
     0.00183 * 365 * ts, 0.10 * 365 * ts, 0.0714 * 365 * ts, #7,8,9
     0.0085 * 365 * ts, 0.0286 * 365 * ts, 0.03 * 365 * ts, #10,11,12
     0.03, 0.1, 1, 0, 0, 434) #13,14,15,16,17,18 0.34
@@ -77,7 +75,7 @@ A_l = Par{Float64}(
 T_t = Par{Float64}(
     01e-8,
     0.00, 0.00, #1,2,3
-    20000 * 365 * ts, 1, 0.00182 * 365 * ts, #4,5,6
+    200000 * 365 * ts, 1, 0.00182 * 365 * ts, #4,5,6
     0.00182 * 365 * ts, min(0.4 * 365 * ts, 1), 0.0133 * 365 * ts, #7,8,9
     0.00192 * 365 * ts, 0.0286 * 365 * ts, 0.05 * 365 * ts, #10,11,12
     0.01, 0.21, 0.0148, 0, 0, 38.79) #13,14,15,16,17,18
@@ -181,12 +179,11 @@ end
 # Arguments: soil, population of infections, parameters
 function update_pool(S, pop, p)
     Eggs = sum([x.EOut for x in pop])
-    PIS = ((1 - (p.pool_egg_loss + p.pool_egg_maturation)) * S.PIS) + Eggs
-    IS = ((1-p.pool_infectives_loss) * S.IS) + (p.pool_egg_maturation * S.PIS)
-    #IS = ((1-p.pool_infectives_loss) * (1 - (p.b * length(pop[:,1]))) * S.IS)
-              + (p.pool_egg_maturation * S.PIS)
+    PIS = (1 - p.pool_egg_loss) * (S.PIS + Eggs)
+    newPIS = PIS * (1 - p.pool_egg_maturation)
+    IS = (1-p.pool_infectives_loss) * (S.IS + (p.pool_egg_maturation * S.PIS))
 
-    Soil{Float64}(PIS, IS)
+    Soil{Float64}(newPIS, IS)
 end
 
 # #### Birth and death process
@@ -200,7 +197,7 @@ function reset_inds_sys(population, ages, risk, death_rates, pars)
   for i = 1:length(ages)
     #@assert ages[i] < 100 "age > 100"
     if rand(Binomial(1, death_rates[get_age_index(ages[i])])) == 1
-      population[i, 1:3] .= Infection{Float64}()
+      population[i, 1:3] .= (Infection{Float64}(),)
       ages[i] = 0
       risk[i, 1:3] = [rand(Gamma(p.k, 1/p.k)) for p in pars]
     end
@@ -261,7 +258,7 @@ function run_mod(n_hosts, pars, ts, halflife, pop_infections, Pool, ages, WBs, d
     end
 
     #Update worm burdens
-    WBs = update_WBs(pop_infections, SpPars, n_hosts)
+    WBs = update_WBs(pop_infections, pars, n_hosts)
 
     return ages, pop_infections, Pool, WBs
 end
@@ -319,34 +316,40 @@ end
 
 # ## Example run
 
-n_runs = 1500
+n_runs = 2000
 n_hosts = 2000
 @time run_record, final_record, ages = main(n_runs, n_hosts, record_run = 1)
 
 # ### Plot output
 using Plots
-using StatPlots
+using StatsPlots
 
 # Plots of each time step.
 # y1 = Na, y2 = Al, y3 = Tt
 
  # Pre-established larvae
-plot(1:n_runs, run_record[:PEL][1:n_runs,:], title = "mean pre-establishment larvae", label = ["N", "A", "T"])
+plot(1:n_runs, run_record[:PEL][1:n_runs,:],
+  title = "mean pre-establishment larvae", label = ["N", "A", "T"])
 
 # Established larvae
-plot(1:n_runs, run_record[:EL][1:n_runs,:], title = "mean established larvae", label = ["N", "A", "T"])
+plot(1:n_runs, run_record[:EL][1:n_runs,:],
+  title = "mean established larvae", label = ["N", "A", "T"])
 
 # Adult worms - the poisson draw now happens to as worms enter the adult phase
-plot(1:n_runs, run_record[:AW][1:n_runs,:], title = "mean adult worms", label = ["N", "A", "T"])
+plot(1:n_runs, run_record[:AW][1:n_runs,:],
+  title = "mean adult worms", label = ["N", "A", "T"])
 
 # All eggs per host
-plot(1:n_runs, run_record[:EOut][1:n_runs,:], title = "mean egg output", label = ["N", "A", "T"])
+plot(1:n_runs, run_record[:EOut][1:n_runs,:],
+  title = "mean egg output", label = ["N", "A", "T"])
 
 # Prevalence - positives numbers of adult worms
-plot(1:n_runs, run_record[:prev][1:n_runs,:], title = "prevalence", label = ["N", "A", "T"])
+plot(1:n_runs, run_record[:prev][1:n_runs,:],
+  title = "prevalence", label = ["N", "A", "T"])
 
 # Infective stages in the soil, absolute numbers
-plot(1:n_runs, run_record[:soil][1:n_runs,:], title = "absolute numbers infective soil stages", label = ["N", "A", "T"])
+plot(1:n_runs, run_record[:soil][1:n_runs,:],
+  title = "absolute numbers infective soil stages", label = ["N", "A", "T"])
 
 # Histograms of final time step (should be stedy) - reassuringly these are all negative binomial looking.
 # Printed below on the notebook is the histogram of Trichuris adult worms in the population
@@ -356,9 +359,9 @@ histogram(final_record[:AW][:,2], legend = false, title = "Ascaris")
 histogram(final_record[:AW][:,3], legend = false, title = "Trichuris")
 
 # The histogram of the eggs per individual at the end of the simulation is not as nicely negative binomial.
-density(final_record[:EOut][:,2], legend = false, title = "Ascaris")
-density(final_record[:EOut][:,1], legend = false, title = "Trichuris")
-density(final_record[:EOut][:,3], bins = 100, legend = false, title = "N.americanus")
+histogram(final_record[:EOut][:,2], legend = false, title = "Ascaris")
+histogram(final_record[:EOut][:,1], legend = false, title = "Trichuris")
+histogram(final_record[:EOut][:,3], bins = 100, legend = false, title = "N.americanus")
 
 # I am not sure what is causing this -
 # it may be do do with the birth-death process, which is not maintaining an exponential distribution.
