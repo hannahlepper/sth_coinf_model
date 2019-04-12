@@ -377,3 +377,6 @@ histogram(acquisition, legend = false)
 # Now we try the density dependent component
 acquisition_density_dependent = map(i -> i^exp(-(i * 0.1)), acquisition)
 histogram(acquisition_density_dependent, legend = false)
+
+# To Do
+# Need to stop re-defining modulation over and over again - make a struct for the different types of modulation
