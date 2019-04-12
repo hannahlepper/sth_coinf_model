@@ -31,6 +31,7 @@ end
 #Generate simulated dataset
 sim_ds = zeros(Float64, 2000, 3, 333) #empty to contain the simulated values
 
+#937.528212 seconds (19.20 G allocations: 888.094 GiB, 19.71% gc time)
 @time for s in 1:333
   sim_ds[:,:,s] = run_particle(1, [Imme_activation[s],
                                    Immf_activation[s],
@@ -113,13 +114,28 @@ histogram(Imme_activation[accept])
 histogram(Immf_activation[accept])
 histogram(fec_modulation[accept])
 histogram(est_modulation[accept])
-
-
+fitted_vals_scaled[:,1,:]'
 #Squeeze posteriors
 
 R"abc_ <- abc::abc" #use R abc package
 @rget abc_ #port function back into Julia
 
+pars = hcat(Imme_activation, Immf_activation,
+            est_modulation, fec_modulation)
+target=[k_obs_scaled[1], mean_obs_scaled[1]]
+sumstat=fitted_vals_scaled[:,1,:]'
+@rput pars; target; sumstat
+@rput sumstat
+R"print(head(setNames(sumstat, c('k', 'mean'))))"
+R"require(abc); fit <- abc(target = setNames(target, c('k', 'mean')),
+             param = setNames(pars, c('Ie_act', 'If_act', 'est_mod', 'fec_mod')),
+             sum.stat = setNames(sumstat, c('k', 'mean')),
+             tol = 0.1, method = 'loclinear')"
+
+test_abc_fit = abc_(target=[k_obs_scaled[1], mean_obs_scaled[1]],
+                     param=pars, sum.stat=fitted_vals_scaled[:,1,:]',
+                     tol=0.1, method="loclinear")
+test_abc_fit
 Na_a = abc_([0.3, 15], a, fitted_vals, 0.1, "loclinear")
 Na_b = abc_([0.3, 15], b, fitted_vals, 0.1, "loclinear")
 Na_c = abc_([0.3, 15], c, fitted_vals, 0.1, "loclinear")
@@ -133,8 +149,8 @@ density(Na_b[:adj_values])
 density(Na_c[:adj_values])
 
 # To Do
-# Need to use a better distance measure; maybe Mahalanobis?
-# Need to check the 'squeeze' procedure
+# Acceptance/rejection needs to be based on quantiles - need some function to find this
+# Need to adapt the 'squeeze' procedure
 # Need to make runable for all three species
 # Need to have the fitting data being put straight into a CSV during fitting process to avoid data loss
 
